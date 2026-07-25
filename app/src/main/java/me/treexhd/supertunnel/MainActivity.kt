@@ -2,6 +2,10 @@ package me.treexhd.supertunnel
 
 import android.net.VpnService
 import android.os.Bundle
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.ClipData
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
@@ -32,10 +36,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
 import me.treexhd.supertunnel.domain.model.*
 import me.treexhd.supertunnel.data.room.ProfileSaveResult
 import me.treexhd.supertunnel.domain.state.TunnelStage
+import me.treexhd.supertunnel.domain.share.ProfileShareCodec
+import me.treexhd.supertunnel.domain.validation.ProfileValidator
 import me.treexhd.supertunnel.service.TunnelVpnService
 import me.treexhd.supertunnel.service.TunnelLogBook
 import me.treexhd.supertunnel.ui.theme.TunnelTheme
@@ -69,7 +74,7 @@ private data class BottomDestination(
 
 private val bottomDestinations = listOf(
     BottomDestination("Home", Icons.Filled.Home, Icons.Outlined.Home),
-    BottomDestination("Configs", Icons.Filled.Storage, Icons.Outlined.Storage),
+    BottomDestination("Profiles", Icons.Filled.Storage, Icons.Outlined.Storage),
     BottomDestination("Logs", Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong),
     BottomDestination("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 )
@@ -107,7 +112,7 @@ private val bottomDestinations = listOf(
     ) { padding ->
         when (tab) {
             0 -> Home(Modifier.padding(padding).padding(20.dp), profiles, selected, { id -> selected = id; onProfileSelected(id) }, serviceState.stage, serviceState.failure?.code, serviceState.failure?.userMessage, serviceState.failure?.technicalMessage, traffic, onConnect, onDisconnect)
-            1 -> Configs(Modifier.padding(padding), profiles, selected, { selected = it; onProfileSelected(it) }, app)
+            1 -> Profiles(Modifier.padding(padding), profiles, selected, { selected = it; onProfileSelected(it) }, app)
             2 -> LogScreen(Modifier.padding(padding).padding(20.dp), serviceState.stage, logLines, TunnelLogBook::clear)
             else -> SettingsScreen(Modifier.padding(padding).padding(20.dp))
         }
@@ -165,7 +170,7 @@ private fun TunnelProfile.summary() = if (mode == TunnelMode.SLIPSTREAM) "$name 
             ) }
         }
     }
-    Spacer(Modifier.height(8.dp)); Text(profile?.let { if (it.mode == TunnelMode.SLIPSTREAM) "Profile: ${it.name}\nDomain: ${it.slipstream?.domain.orEmpty()}\nResolver: ${it.slipstream?.resolver.orEmpty()}\nMode: SLIPSTREAM" else "Profile: ${it.name}\nGateway: ${it.payload?.endpointHost?.ifBlank { it.ssh.host } ?: it.ssh.host}:${it.payload?.endpointPort?.takeIf { port -> port in 1..65535 } ?: it.ssh.port}\nMode: ${it.mode.name}" } ?: "Create a profile in Configs")
+    Spacer(Modifier.height(8.dp)); Text(profile?.let { if (it.mode == TunnelMode.SLIPSTREAM) "Profile: ${it.name}\nDomain: ${it.slipstream?.domain.orEmpty()}\nResolver: ${it.slipstream?.resolver.orEmpty()}\nMode: SLIPSTREAM" else "Profile: ${it.name}\nGateway: ${it.payload?.endpointHost?.ifBlank { it.ssh.host } ?: it.ssh.host}:${it.payload?.endpointPort?.takeIf { port -> port in 1..65535 } ?: it.ssh.port}\nMode: ${it.mode.name}" } ?: "Create a profile in Profiles")
     if (message != null) Text("${code ?: "ERROR"}: $message", color = MaterialTheme.colorScheme.error)
     if (!technical.isNullOrBlank()) Text(technical, color = MaterialTheme.colorScheme.error)
     Spacer(Modifier.height(16.dp))
@@ -230,11 +235,38 @@ private fun openTunnelUrl(url: String): String {
     if (lines.isEmpty()) Text("No connection attempt yet.") else LazyColumn { items(lines) { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 4.dp)) } }
 }
 
-@Composable private fun Configs(modifier: Modifier, profiles: List<TunnelProfile>, selected: String?, select: (String) -> Unit, app: App) {
+@Composable private fun Profiles(modifier: Modifier, profiles: List<TunnelProfile>, selected: String?, select: (String) -> Unit, app: App) {
     var editing by remember { mutableStateOf<TunnelProfile?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    fun copyProfile(profile: TunnelProfile) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SuperTunnel profile", ProfileShareCodec.encode(profile)))
+        Toast.makeText(context, "Profile URL copied", Toast.LENGTH_SHORT).show()
+    }
+    fun importProfile() {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+        ProfileShareCodec.decode(text).fold(
+            onSuccess = { imported ->
+                if (ProfileValidator.validate(imported).isValid) {
+                    scope.launch {
+                        when (app.profiles.save(imported)) {
+                            ProfileSaveResult.Saved -> { select(imported.id); Toast.makeText(context, "Profile imported", Toast.LENGTH_SHORT).show() }
+                            ProfileSaveResult.DuplicateName -> Toast.makeText(context, "Profile name already exists", Toast.LENGTH_LONG).show()
+                            ProfileSaveResult.InvalidName -> Toast.makeText(context, "Profile name is required", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                } else Toast.makeText(context, "Imported profile has invalid fields", Toast.LENGTH_LONG).show()
+            },
+            onFailure = { Toast.makeText(context, "Clipboard does not contain a valid spnt: URL", Toast.LENGTH_LONG).show() }
+        )
+    }
     if (editing != null) { ProfileEditor(modifier, editing!!, app, { saved -> app.profiles.save(saved) }, { result, saved -> if (result == ProfileSaveResult.Saved) { editing = null; select(saved.id) } }, { editing = null }); return }
-    Column(modifier.padding(16.dp)) { Row { Text("Configs", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall); Button(onClick = { editing = TunnelProfile() }) { Text("Add") } }; Spacer(Modifier.height(8.dp))
-        LazyColumn { items(profiles, key = { it.id }) { p -> ListItem(headlineContent = { Text(p.name) }, supportingContent = { Text(p.summary().substringAfter(" · ")) }, modifier = Modifier.fillMaxWidth().clickable { select(p.id) }, trailingContent = { TextButton(onClick = { editing = p }) { Text("Edit") } }); HorizontalDivider() } }
+    Column(modifier.padding(16.dp)) { Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Text("Profiles", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall); Button(onClick = { editing = TunnelProfile() }, shape = RectangleShape) { Text("Add") } }; Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth()) { OutlinedButton(onClick = ::importProfile, shape = RectangleShape, modifier = Modifier.weight(1f)) { Text("Import from Clipboard") }; Spacer(Modifier.width(8.dp)); OutlinedButton(enabled = selected != null, onClick = { profiles.firstOrNull { it.id == selected }?.let(::copyProfile) }, shape = RectangleShape, modifier = Modifier.weight(1f)) { Text("Export selected") } }
+        Text("Share URLs use URL-safe Base64 encoding and never contain plaintext passwords.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
+        LazyColumn { items(profiles, key = { it.id }) { p -> ListItem(headlineContent = { Text(p.name) }, supportingContent = { Text(p.summary().substringAfter(" · ")) }, modifier = Modifier.fillMaxWidth().clickable { select(p.id) }, trailingContent = { Row { TextButton(onClick = { copyProfile(p) }) { Text("Export") }; TextButton(onClick = { editing = p }) { Text("Edit") } } }); HorizontalDivider() } }
     }
 }
 
@@ -249,6 +281,11 @@ private fun openTunnelUrl(url: String): String {
     var payloadPort by remember { mutableStateOf(initial.payload?.endpointPort?.toString() ?: "80") }
     var rawPayload by remember { mutableStateOf(initial.payload?.raw.orEmpty()) }
     var wsPath by remember { mutableStateOf(initial.payload?.webSocketPath ?: "/") }
+    var tlsHost by remember { mutableStateOf(initial.tls?.endpointHost.orEmpty()) }
+    var tlsPort by remember { mutableStateOf(initial.tls?.endpointPort?.toString() ?: "443") }
+    var tlsSni by remember { mutableStateOf(initial.tls?.sni.orEmpty()) }
+    var proxyHost by remember { mutableStateOf(initial.proxy?.host.orEmpty()) }
+    var proxyPort by remember { mutableStateOf(initial.proxy?.port?.toString() ?: "8080") }
     var slipDomain by remember(initial.id) { mutableStateOf(initial.slipstream?.domain.orEmpty()) }
     var slipResolver by remember(initial.id) { mutableStateOf(initial.slipstream?.resolver.orEmpty().ifBlank { "1.1.1.1" }) }
     var slipCongestion by remember(initial.id) { mutableStateOf(initial.slipstream?.congestionControl ?: "bbr") }
@@ -256,6 +293,8 @@ private fun openTunnelUrl(url: String): String {
     var saveError by remember { mutableStateOf<String?>(null) }
     var resolverOpen by remember { mutableStateOf(false) }
     val slipstream = mode == TunnelMode.SLIPSTREAM
+    val needsTls = mode in setOf(TunnelMode.SSH_TLS, TunnelMode.SSH_TLS_PROXY, TunnelMode.SSH_TLS_PAYLOAD, TunnelMode.SSH_TLS_PROXY_PAYLOAD)
+    val needsProxy = mode in setOf(TunnelMode.SSH_PROXY, TunnelMode.SSH_PROXY_PAYLOAD, TunnelMode.SSH_TLS_PROXY, TunnelMode.SSH_TLS_PROXY_PAYLOAD)
     LazyColumn(modifier.padding(20.dp)) { item {
         Text(if (slipstream) "Slipstream profile" else "SSH profile", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp)); Field("Name", name) { name = it }
@@ -279,6 +318,14 @@ private fun openTunnelUrl(url: String): String {
         } else {
             Text("SSH target: 127.0.0.1:22 (behind the WebSocket gateway)", style = MaterialTheme.typography.bodySmall)
             Field("Username", user) { user = it }; Field("Password (leave blank to keep existing)", password) { password = it }
+            if (needsProxy) {
+                Text("HTTP proxy", style = MaterialTheme.typography.titleMedium)
+                Field("Proxy host", proxyHost) { proxyHost = it }; Field("Proxy port", proxyPort) { proxyPort = it }
+            }
+            if (needsTls) {
+                Text("TLS endpoint", style = MaterialTheme.typography.titleMedium)
+                Field("TLS endpoint host", tlsHost) { tlsHost = it }; Field("TLS endpoint port", tlsPort) { tlsPort = it }; Field("TLS SNI hostname", tlsSni) { tlsSni = it }
+            }
             Text("WebSocket gateway", style = MaterialTheme.typography.titleMedium)
             Field("WebSocket gateway host", payloadHost) { payloadHost = it }; Field("WebSocket gateway port", payloadPort) { payloadPort = it }
             PayloadField(rawPayload) { rawPayload = it }; Field("WebSocket path", wsPath) { wsPath = it }
@@ -288,9 +335,15 @@ private fun openTunnelUrl(url: String): String {
             val candidate = if (slipstream) initial.copy(name = name.trim(), mode = mode, slipstream = SlipstreamConfig(slipDomain.trim(), slipResolver.trim(), slipCongestion.trim(), slipKeepAlive.toIntOrNull() ?: 400), updatedAt = System.currentTimeMillis()) else {
                 val secret = if (password.isBlank()) initial.ssh.passwordSecretId else app.secrets.put(password.toCharArray())
                 val port = payloadPort.toIntOrNull() ?: 80
-                initial.copy(name = name.trim(), mode = mode, ssh = SshConfig("127.0.0.1", 22, user.trim(), passwordSecretId = secret), payload = PayloadConfig(raw = rawPayload, endpointHost = payloadHost.trim(), endpointPort = port, webSocket = true, webSocketPath = wsPath), updatedAt = System.currentTimeMillis())
+                initial.copy(name = name.trim(), mode = mode, ssh = SshConfig("127.0.0.1", 22, user.trim(), passwordSecretId = secret),
+                    proxy = if (needsProxy) HttpProxyConfig(proxyHost.trim(), proxyPort.toIntOrNull() ?: 0) else null,
+                    tls = if (needsTls) TlsConfig(tlsHost.trim(), tlsPort.toIntOrNull() ?: 0, tlsSni.trim()) else null,
+                    payload = PayloadConfig(raw = rawPayload, endpointHost = payloadHost.trim(), endpointPort = port, webSocket = true, webSocketPath = wsPath), updatedAt = System.currentTimeMillis())
             }
-            if (candidate.name.isBlank()) saveError = "Profile Name cannot be empty" else scope.launch { when (val result = save(candidate)) { ProfileSaveResult.DuplicateName -> saveError = "Profile Name already exists"; ProfileSaveResult.InvalidName -> saveError = "Profile Name cannot be empty"; ProfileSaveResult.Saved -> saved(result, candidate) } }
+            val validation = ProfileValidator.validate(candidate)
+            if (candidate.name.isBlank()) saveError = "Profile Name cannot be empty"
+            else if (!validation.isValid) saveError = validation.errors.joinToString("\n")
+            else scope.launch { when (val result = save(candidate)) { ProfileSaveResult.DuplicateName -> saveError = "Profile Name already exists"; ProfileSaveResult.InvalidName -> saveError = "Profile Name cannot be empty"; ProfileSaveResult.Saved -> saved(result, candidate) } }
         }) { Text("Save") }; Spacer(Modifier.width(12.dp)); TextButton(onClick = cancel) { Text("Cancel") } }
     } }
 }
