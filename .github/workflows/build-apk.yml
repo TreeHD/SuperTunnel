@@ -31,7 +31,10 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android build tools
-        run: sdkmanager "platforms;android-37" "build-tools;35.0.0" "ndk;28.2.13676358"
+        # API 37 is published under the 37.0 package identifier on Google's
+        # current repository; the installed platform still exposes API 37 to
+        # Gradle as compileSdk 37.
+        run: sdkmanager "platforms;android-37.0" "build-tools;35.0.0" "ndk;28.2.13676358"
 
       - name: Export NDK path
         run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
