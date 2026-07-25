@@ -33,3 +33,4 @@ local.properties
 /.externalNativeBuild/
 **/.picoquic-build/
 **/.interop/
+**/target/

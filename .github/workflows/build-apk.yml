@@ -44,11 +44,34 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Bootstrap Android OpenSSL
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "$NDK_BIN" >> "$GITHUB_PATH"
+          echo "CC=$NDK_BIN/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
+          echo "CXX=$NDK_BIN/aarch64-linux-android26-clang++" >> "$GITHUB_ENV"
+          echo "AR=$NDK_BIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "RANLIB=$NDK_BIN/llvm-ranlib" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK_BIN/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
+          cargo build --manifest-path ci/android-openssl-bootstrap/Cargo.toml --release --target aarch64-linux-android
+          OPENSSL_INSTALL="$(find "$GITHUB_WORKSPACE/ci/android-openssl-bootstrap/target/aarch64-linux-android/release/build" -type d -path '*/openssl-build/install' -print -quit)"
+          test -n "$OPENSSL_INSTALL"
+          echo "OPENSSL_ROOT_DIR=$OPENSSL_INSTALL" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=$OPENSSL_INSTALL/include" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=$OPENSSL_INSTALL/lib" >> "$GITHUB_ENV"
+          echo "OPENSSL_SSL_LIBRARY=$OPENSSL_INSTALL/lib/libssl.a" >> "$GITHUB_ENV"
+          echo "OPENSSL_CRYPTO_LIBRARY=$OPENSSL_INSTALL/lib/libcrypto.a" >> "$GITHUB_ENV"
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+
       - name: Build Slipstream client for arm64
         working-directory: third_party/slipstream-rust
         env:
           CARGO_BUILD_TARGET: aarch64-linux-android
-        run: cargo build --release -p slipstream-client
+          ANDROID_ABI: arm64-v8a
+          ANDROID_PLATFORM: android-26
+        run: cargo build --release -p slipstream-client --target aarch64-linux-android --features openssl-vendored,picoquic-minimal-build
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon :app:assembleDebug

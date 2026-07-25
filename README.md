@@ -41,12 +41,34 @@ Android SDK 路徑可透過 `ANDROID_HOME` / `ANDROID_SDK_ROOT` 設定；本機�
 
 ## 本機編譯 APK
 
-先建立 Slipstream arm64 binary：
+先建立 Android 版 OpenSSL 與 Slipstream arm64 binary。CI 使用 vendored OpenSSL，避免把 runner 的 x86_64 `libssl` 誤用於 Android 交叉編譯：
 
 ```bash
 rustup target add aarch64-linux-android
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+export ANDROID_ABI=arm64-v8a
+export ANDROID_PLATFORM=android-26
+export NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+export PATH="$NDK_BIN:$PATH"
+export CC="$NDK_BIN/aarch64-linux-android26-clang"
+export CXX="$NDK_BIN/aarch64-linux-android26-clang++"
+export AR="$NDK_BIN/llvm-ar"
+export RANLIB="$NDK_BIN/llvm-ranlib"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC"
+
+cargo build --manifest-path ci/android-openssl-bootstrap/Cargo.toml \
+  --release --target aarch64-linux-android
+export OPENSSL_ROOT_DIR="$(find ci/android-openssl-bootstrap/target/aarch64-linux-android/release/build \
+  -type d -path '*/openssl-build/install' -print -quit)"
+export OPENSSL_INCLUDE_DIR="$OPENSSL_ROOT_DIR/include"
+export OPENSSL_LIB_DIR="$OPENSSL_ROOT_DIR/lib"
+export OPENSSL_SSL_LIBRARY="$OPENSSL_ROOT_DIR/lib/libssl.a"
+export OPENSSL_CRYPTO_LIBRARY="$OPENSSL_ROOT_DIR/lib/libcrypto.a"
+export OPENSSL_STATIC=1
+
 cd third_party/slipstream-rust
-cargo build --release -p slipstream-client --target aarch64-linux-android
+cargo build --release -p slipstream-client --target aarch64-linux-android \
+  --features openssl-vendored,picoquic-minimal-build
 cd ../..
 ```
 
