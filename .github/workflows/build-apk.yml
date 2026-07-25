@@ -1,0 +1,57 @@
+name: Build SuperTunnel APK
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Apply SuperTunnel native tuning
+        run: git apply patches/lwip-performance.patch
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-37" "build-tools;35.0.0" "ndk;28.2.13676358"
+
+      - name: Export NDK path
+        run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Build Slipstream client for arm64
+        working-directory: third_party/slipstream-rust
+        env:
+          CARGO_BUILD_TARGET: aarch64-linux-android
+        run: cargo build --release -p slipstream-client
+
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: supertunnel-debug-arm64
+          path: app/build/outputs/apk/debug/app-debug.apk

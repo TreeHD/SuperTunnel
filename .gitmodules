@@ -1,0 +1,7 @@
+[submodule "third_party/hev-socks5-tunnel"]
+	path = third_party/hev-socks5-tunnel
+	url = https://github.com/heiher/hev-socks5-tunnel.git
+
+[submodule "third_party/slipstream-rust"]
+	path = third_party/slipstream-rust
+	url = https://github.com/Mygod/slipstream-rust.git

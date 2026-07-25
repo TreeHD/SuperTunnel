@@ -1,0 +1,13 @@
+services:
+  ssh:
+    image: linuxserver/openssh-server:latest
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      USER_NAME: tunneltest
+      PASSWORD_ACCESS: "true"
+      USER_PASSWORD: change-me-before-use
+    ports: ["2222:2222"]
+  http-echo:
+    image: mendhak/http-https-echo:35
+    ports: ["8088:8080"]
