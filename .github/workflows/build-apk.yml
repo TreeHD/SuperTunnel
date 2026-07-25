@@ -49,6 +49,13 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: |
           NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TOOL_BIN="$RUNNER_TEMP/android-cross-tools"
+          mkdir -p "$TOOL_BIN"
+          ln -sf "$NDK_BIN/aarch64-linux-android26-clang" "$TOOL_BIN/aarch64-linux-android-clang"
+          ln -sf "$NDK_BIN/aarch64-linux-android26-clang++" "$TOOL_BIN/aarch64-linux-android-clang++"
+          ln -sf "$NDK_BIN/llvm-ar" "$TOOL_BIN/aarch64-linux-android-ar"
+          ln -sf "$NDK_BIN/llvm-ranlib" "$TOOL_BIN/aarch64-linux-android-ranlib"
+          echo "$TOOL_BIN" >> "$GITHUB_PATH"
           echo "$NDK_BIN" >> "$GITHUB_PATH"
           echo "CC=$NDK_BIN/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
           echo "CXX=$NDK_BIN/aarch64-linux-android26-clang++" >> "$GITHUB_ENV"
