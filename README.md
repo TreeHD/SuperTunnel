@@ -99,14 +99,23 @@ git apply --reverse patches/lwip-performance.patch
 
 ## GitHub Actions
 
-`.github/workflows/build-apk.yml` 會自動：
+`.github/workflows/build-apk.yml` 會在推送 `v*` 格式的版本 tag（例如
+`v0.1.0`）時自動：
 
 1. checkout recursive submodules；
 2. 套用 lwIP 效能 patch；
 3. 安裝 Android SDK、NDK、JDK 17 與 Rust target；
 4. 編譯 Slipstream arm64；
 5. 執行 `:app:assembleDebug`；
-6. 上傳 `supertunnel-debug-arm64` APK artifact。
+6. 建立同名 GitHub Release，並附上可直接下載的
+   `SuperTunnel-<tag>-arm64-debug.apk`。
+
+建立版本發佈時，先提交變更並建立、推送 tag：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 因此不需要把 APK、NDK、Cargo target 或 Gradle build cache 提交到 Git。
 
